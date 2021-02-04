@@ -31,6 +31,7 @@ import java.io.*;
 import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -42,7 +43,6 @@ import java.util.stream.BaseStream;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import com.google.gson.Gson;
 
 public class AutoYaraCluster
 {
@@ -98,6 +98,9 @@ public class AutoYaraCluster
         variableArity = true,
         description="Directory of files to n-gram")
     List<File> inDir;
+
+    @Parameter(names={"--paths-list", "-pl"})
+    boolean paths_list = false;
     
     @Parameter(names = "--save-all-rules",
         description = "If true, all yara rules created will be saved, rather "
@@ -170,6 +173,21 @@ public class AutoYaraCluster
         }
         else
             out_dir = out_file.getParentFile();
+
+        if (paths_list) {
+            var inFile = inDir.get(0);
+            if (inFile.isFile()) {
+                try (Stream<String> lines = Files.lines(inFile.toPath())) {
+                    inDir = lines.filter(p -> Files.exists(Paths.get(p))).map(p -> new File(p)).collect(Collectors.toList());
+                }
+            }
+            var fpFile = fpEvalDirs.get(0);
+            if (fpFile.isFile()) {
+                try (Stream<String> lines = Files.lines(fpFile.toPath())) {
+                    fpEvalDirs = lines.filter(p -> Files.exists(Paths.get(p))).map(p -> new File(p)).collect(Collectors.toList());
+                }
+            }
+        }
         
         //sort from high to low
         SortedSet<Integer> bloomSizes = new ConcurrentSkipListSet<>((a, b) -> a.compareTo(b));
@@ -302,7 +320,7 @@ public class AutoYaraCluster
     static public List<Path> getAllChildrenFiles(List<File> sourceDirs)
     {
 
-        
+
         List<Path> targets = sourceDirs.stream().flatMap(f->
         {
             try

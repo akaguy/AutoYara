@@ -22,6 +22,9 @@ import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +33,8 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import static java.lang.Math.*;
 import java.util.stream.Stream;
+
+import it.unimi.dsi.fastutil.objects.ObjectLists;
 import me.tongfei.progressbar.ProgressBar;
 import me.tongfei.progressbar.ProgressBarStyle;
 
@@ -58,10 +63,15 @@ public class Bytes2Bloom
     
     @Parameter(names={"--input-dir", "-i"}, converter = FileConverter.class, required=true, description="Directory of files to n-gram")
     File inDir;
+
+    @Parameter(names={"--paths-list", "-pl"})
+    boolean paths_list = false;
     
     @Parameter(names={"--out", "-o"}, converter = FileConverter.class, required=true, description="Output file")
     File outDir;
-            
+
+
+
     public static void main(String... args) throws IOException
     {
         System.out.println("AutoYara version " + Version.pomVersion + ", compile date: " + Version.buildTime);
@@ -92,29 +102,39 @@ public class Bytes2Bloom
         /**
          * All the files we will be running n-grams over
          */
-        List<File> allFiles = Files.walk(inDir.toPath(), FileVisitOption.FOLLOW_LINKS)
-                .parallel()
-                .filter(p->!Files.isDirectory(p))
-                .map(p->p.toFile())
-                .collect(Collectors.toList());
-        
-        gramSizes.forEach(gram_size->
-        {
+        List<File> allFiles = new ArrayList<>();
+        if (!paths_list) {
+            allFiles = Files.walk(inDir.toPath(), FileVisitOption.FOLLOW_LINKS)
+                    .parallel()
+                    .filter(p -> !Files.isDirectory(p))
+                    .map(p -> p.toFile()).collect(Collectors.toList());
+
+        }
+        else if (inDir.isFile()) {
+            try (Stream<String> lines = Files.lines(inDir.toPath())) {
+                allFiles = lines.filter(p-> Files.exists(Paths.get(p))).map(p->new File(p)).collect(Collectors.toList());
+            }
+        }
+        else {
+            return;
+        }
+
+        for(var gram_size:gramSizes) {
             NGramGeneric ngram = new NGramGeneric();
             ngram.setAlphabetSize(256);
             ngram.setFilterSize(filterSize);
             ngram.setGramSize(gram_size);
             ngram.setTooKeep(tooKeep);
-            
+
             System.out.println("Starting " + gram_size + "-grams of " + allFiles.size() + " files...");
-            
+
             ngram.init();
-            
+
             Stream<File> stream = allFiles.parallelStream();
 
             if(pb_bars)
                 stream = ProgressBar.wrap(stream, "Hash-Pass");
-            
+
             stream.forEach(f->
             {
                 try(InputStream is = new BufferedInputStream(GZIPHelper.getStream(new FileInputStream(f))))
@@ -125,12 +145,12 @@ public class Bytes2Bloom
                 {
                     Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
                 }
-                
+
             });
-            
+
             System.out.println("Finding top-k hashes");
             ngram.finishHashCount();
-            
+
             stream = allFiles.parallelStream();
             if(pb_bars)
                 stream = ProgressBar.wrap(stream, "Exact-Pass");
@@ -144,16 +164,16 @@ public class Bytes2Bloom
                 {
                     Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
                 }
-                
+
             });
-            
+
             Map<AlphabetGram, AtomicInteger> found_grams = ngram.finishExactCount();
             CountingBloom bloom = new CountingBloom(filter_slots, filter_hashes);
             bloom.divisor = allFiles.size();
-            
+
             for(Map.Entry<AlphabetGram, AtomicInteger> entry : found_grams.entrySet())
                 bloom.put(entry.getKey(), entry.getValue().get());
-            
+
             try(ObjectOutputStream out = new ObjectOutputStream(
                     new BufferedOutputStream(new FileOutputStream(
                             new File(outDir, out_name + "_" + gram_size + ".bloom")))))
@@ -164,7 +184,8 @@ public class Bytes2Bloom
             {
                 Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
             }
-        
-        });
+
+        }
+
     }
 }
