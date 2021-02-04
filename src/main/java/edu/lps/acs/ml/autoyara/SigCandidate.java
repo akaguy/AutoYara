@@ -74,6 +74,7 @@ public class SigCandidate
     AlphabetGram signature;
     double b_fp;
     double m_fp;
+
     Set<Integer> coverage;
     double entropy = -1;
 

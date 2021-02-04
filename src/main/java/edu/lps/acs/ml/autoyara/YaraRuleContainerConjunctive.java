@@ -30,23 +30,23 @@ public class YaraRuleContainerConjunctive
     int total_count;
     String name;
     List<String> extraComments;
-    List<Set<SigCandidate>> signature_sets = new ArrayList<>();
-    List<Integer> min_counts = new ArrayList<>();
-    
+    Set<SigCandidate> signature_set = new HashSet();
+    Integer min_count = 0;
+    Integer id = 0;
+    Map<String, Double> measures = new HashMap<>();
 
-    public YaraRuleContainerConjunctive(int total_count, String name)
+
+    public YaraRuleContainerConjunctive(int total_count, String name,int count, Set<SigCandidate> signature,int id)
     {
         this.total_count = total_count;
         this.name = name;
+        this.min_count = count;
+        this.signature_set = signature;
         this.extraComments = new ArrayList<>();
+        this.id = id;
     }
     
-    public void addSignature(int count, Set<SigCandidate> signature)
-    {
-        signature_sets.add(signature);
-        min_counts.add(count);
-    }
-    
+
     /**
      * Returns the minimum number of terms in any sub-rule of this larger yara rule. 
      * For example, (a and b and c and d) or (d and e and f) would return 3. 
@@ -54,7 +54,7 @@ public class YaraRuleContainerConjunctive
      */
     public int minConjunctionSize()
     {
-        return signature_sets.stream().mapToInt(s->s.size()).min().orElse(0);
+        return signature_set.size();
     }
     
     public void addComment(String comment)
@@ -69,74 +69,66 @@ public class YaraRuleContainerConjunctive
      */
     public boolean match(InputStream input)
     {
-        if(signature_sets.isEmpty())
+        if(signature_set.isEmpty())
             return false;
         NGramGeneric ngram = new NGramGeneric();
         ngram.setAlphabetSize(256);
-        ngram.setGramSize(signature_sets.get(0).stream().findAny().get().signature.size());
+        ngram.setGramSize(signature_set.stream().findAny().get().signature.size());
         ngram.setFilterSize((int) 214748383 / 8);
         
         Map<AlphabetGram, Set<Integer>> observed = new HashMap<>();
-        for(Set<SigCandidate> set : signature_sets)
-        {
-            for(SigCandidate cand : set)
-                observed.put(cand.signature, new HashSet<>());
-        }
-        
+        for(SigCandidate cand : signature_set)
+            observed.put(cand.signature, new HashSet<>());
+
         //get counts for what n-grams were seen in this data
         ngram.incrementConuts(input, 0, observed);
         
         //Do we have a match?
-        for(int group = 0; group < signature_sets.size(); group++)
-        {
-            Set<SigCandidate> set = signature_sets.get(group);
-            int matches_found = set.stream()
-                    .mapToInt(sig_component->observed.get(sig_component).size())
+        int matches_found = signature_set.stream()
+                   .mapToInt(sig_component->observed.get(sig_component).size())
                     .sum();
-            
-            if (matches_found >= min_counts.get(group))
-                return true;
-        }
-        
+
+        if (matches_found >= min_count)
+             return true;
+
         return false;
     }
 
     @Override
-    public String toString()
-    {
+    public String toString() {
+
         StringBuilder sb = new StringBuilder();
-        sb.append("rule ").append(name).append("\n");
+        sb.append("rule ").append(name).append('_').append(id).append("\n");
         sb.append("{\n");
-        
-        
-        for(String comment : extraComments)
-        {
-            while(comment.endsWith("\n"))
-                comment = comment.substring(0, comment.length()-1);
+
+        //TODO: handle
+        for (String comment : extraComments) {
+            while (comment.endsWith("\n"))
+                comment = comment.substring(0, comment.length() - 1);
             comment = comment.replaceAll("\n", "\n\t//");
-            
+
             sb.append("\t//").append(comment).append("\n");
         }
-        
+
+        Set<SigCandidate> sig_set = signature_set;
+
         Map<SigCandidate, String> sigToName = new HashMap<>();
-        for(Set<SigCandidate> sig_set : signature_sets)
-            for(SigCandidate s : sig_set)
-                if(!sigToName.containsKey(s))
-                    sigToName.putIfAbsent(s, "$x" + sigToName.size());
+        for (SigCandidate s : sig_set)
+            if (!sigToName.containsKey(s))
+                sigToName.putIfAbsent(s, "$x" + sigToName.size());
         List<SigCandidate> signatures = new ArrayList<>(sigToName.keySet());
-        
+
         sb.append("\tstrings:\n");
-        for(int i = 0; i < signatures.size(); i++)
-        {
+        for (int i = 0; i < signatures.size(); i++) {
             //first lets right out a comment for this rule
             SigCandidate sig = signatures.get(i);
             sb.append("\t\t//Benign FP est: ");
-            if(sig.b_fp < 0)
+            if (sig.b_fp < 0)
                 sb.append("<").append(-sig.b_fp);
             else
                 sb.append(-sig.b_fp);
             sb.append(" Malicious FP est: ");
-            if(sig.m_fp < 0)
+            if (sig.m_fp < 0)
                 sb.append("<").append(-sig.m_fp);
             else
                 sb.append(-sig.m_fp);
@@ -150,24 +142,18 @@ public class YaraRuleContainerConjunctive
         }
         sb.append("\n");
         sb.append("\t\tcondition:\n");
-        for(int i = 0; i < signature_sets.size(); i++)
-        {
-            if(i != 0)
-                sb.append(" or ");
-            sb.append("(").append(min_counts.get(i)).append(" of (");
-            boolean first= true;
-            for(SigCandidate s : signature_sets.get(i))
-            {
-                if(first)
-                    first = false;
-                else
-                    sb.append(",");
-                sb.append(sigToName.get(s));
-            }
-            sb.append(") )");
-            
+        sb.append("(").append(min_count).append(" of (");
+        boolean first= true;
+        for (SigCandidate s : sig_set) {
+            if(first)
+                first = false;
+            else
+                sb.append(",");
+            sb.append(sigToName.get(s));
         }
-        sb.append("}");
+        sb.append(") )");
+        sb.append("}\n");
+
         return sb.toString();
     }
 
@@ -176,7 +162,7 @@ public class YaraRuleContainerConjunctive
      * <be>
      * The default is to create a byte string that would look like:<br>
      * <code>{6A 40 68 00 30 00 00 6A 14 8D 91}</code>
-     * 
+     *    נ נ
      * 
      * @param sb the string builder to insert the string into
      * @param sig the signature to convert into a string
@@ -359,7 +345,7 @@ public class YaraRuleContainerConjunctive
             s = s.replaceAll("\\p{C}", "");
 
             
-            sb.append("//This might be a string? Looks like:").append(s);
+            sb.append("// string:").append(s);
             return true;
         }
         catch(Exception e)

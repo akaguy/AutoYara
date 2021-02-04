@@ -8,52 +8,16 @@ package edu.lps.acs.ml.autoyara;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
-import com.beust.jcommander.converters.EnumConverter;
+import com.google.gson.ExclusionStrategy;
+import com.google.gson.FieldAttributes;
+import com.google.gson.GsonBuilder;
 import edu.lps.acs.ml.ngram3.NGramGeneric;
 import edu.lps.acs.ml.ngram3.alphabet.AlphabetGram;
 import edu.lps.acs.ml.ngram3.utils.FileConverter;
 import edu.lps.acs.ml.ngram3.utils.GZIPHelper;
-import java.io.BufferedInputStream;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.nio.file.FileVisitOption;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.OpenOption;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.SortedSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.BaseStream;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
 import jsat.SimpleDataSet;
 import jsat.classifiers.DataPoint;
 import jsat.clustering.HDBSCAN;
-import jsat.clustering.VBGMM;
-import jsat.clustering.biclustering.Bicluster;
 import jsat.clustering.biclustering.SpectralCoClustering;
 import jsat.linear.IndexValue;
 import jsat.linear.SparseVector;
@@ -63,10 +27,23 @@ import jsat.utils.IntList;
 import jsat.utils.concurrent.AtomicDouble;
 import me.tongfei.progressbar.ProgressBar;
 
-/**
- *
- * @author edraff
- */
+import java.io.*;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.BaseStream;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import com.google.gson.Gson;
+
 public class AutoYaraCluster
 {
     
@@ -103,6 +80,9 @@ public class AutoYaraCluster
     
     @Parameter(names={"--malicious", "-m"}, converter = FileConverter.class, description="Directory of bloom filters for Malicious Files")
     File malicious_bloom_dir = new File("malicious-bytes");
+
+    @Parameter(names={"--json", "-j"}, converter = FileConverter.class, description="Path to Json to save Yara rules")
+    File json_path = null;
         
     @Parameter(names={"--fp-dirs", "-fpds"}, converter = FileConverter.class, required=false, 
         variableArity = true,
@@ -125,7 +105,7 @@ public class AutoYaraCluster
                 + "selection heuristics do not actually select the best rule, or"
                 + " you wish to do more testing / investigation. ")
     boolean save_all_rules = false;
-    
+
     @Parameter(names = "--help", help = true)
     boolean help = false;
     
@@ -177,6 +157,8 @@ public class AutoYaraCluster
     
     public void run() throws IOException
     {
+        var all_rules = new ArrayList<YaraRulesContainer>();
+
         if(out_file == null)
             out_file = new File(inDir.get(0).getName() + ".yara");
         final String name = out_file.getName().replace(".yara", "");
@@ -211,7 +193,7 @@ public class AutoYaraCluster
         //, lets find some potential yara rules!
         /////////////
         
-        final Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList();
+        final Collection<YaraRulesContainer> best_rule = new ArrayList();
         final AtomicDouble best_rule_coverage = new AtomicDouble(0);
         /**
          * Whether or not we meet the goal of having at least 5 terms/features 
@@ -236,12 +218,16 @@ public class AutoYaraCluster
             {
                 Set<Integer> rows_covered = new HashSet<>();
                 
-                YaraRuleContainerConjunctive yara= buildRule(finalCandidates, targets, rows_covered, name, norm,
+                YaraRulesContainer yara= buildRule(finalCandidates, targets, rows_covered, name, norm,
                                                             gram_size, alreadyFrailedOn);
+                //DOTO: fix if needed
+                double fp_rate = fpEvalDirs.isEmpty() ? 0 : yara.signature_sets.stream().mapToDouble(rule->addMatchEval("FP", fpEvalDirs, rule)).max().orElse(-1);
+//                double tp_rate = fpEvalDirs.isEmpty() ? 0 : yara.signature_sets.stream().mapToDouble(rule->addMatchEval("True Positives", tpEvalDirs, rule)).max().orElse(-1);
 
-                double fp_rate = fpEvalDirs.isEmpty() ? 0 : addMatchEval("False Positives:", fpEvalDirs, yara);
-                double tp_rate = tpEvalDirs.isEmpty() ? 0 : addMatchEval("True Positives:", tpEvalDirs, yara);
-                double input_tp_rate = addMatchEval("Input TP Rate:", inDir, yara);
+                double input_tp_rate = yara.signature_sets.stream().mapToDouble(rule->addMatchEval("TP", inDir, rule)).max().orElse(-1);
+
+                all_rules.add(yara);
+
 
                 if(print_rules)
                 {
@@ -287,10 +273,19 @@ public class AutoYaraCluster
             System.out.println("Saving rule to " + out_file.getAbsolutePath());
         try(BufferedWriter bw = new BufferedWriter(new FileWriter(out_file)))
         {
-            YaraRuleContainerConjunctive yara = best_rule.stream().findFirst().get();
+            YaraRulesContainer yara = best_rule.stream().findFirst().get();
             bw.write(yara.toString());
         }
-        
+
+        if (json_path != null)
+        {
+            var gb = new GsonBuilder().setExclusionStrategies(new ExclStrat()).setPrettyPrinting().create();
+            String json_str = gb.toJson(all_rules);
+            try(BufferedWriter bw = new BufferedWriter(new FileWriter(json_path)))
+            {
+                bw.write(json_str);
+            }
+        }
         
     }
     
@@ -493,7 +488,7 @@ public class AutoYaraCluster
             double numer = 0;
             double denom = 0;
             StringBuilder comment = new StringBuilder();
-            comment.append(header).append("\n");
+            comment.append(header).append(":\n");
             
             /**
              * If there are sub folders, we will add comments to delineate by 
@@ -573,20 +568,23 @@ public class AutoYaraCluster
                 //TODO, write out the files that we FPd on
             }
             yara.addComment(comment.toString());
-            
-            return numer/denom;
+
+            var rate = numer/denom;
+
+            yara.measures.put(header,rate);
+            return rate;
         }
         else
             return 1.0;
     }
 
-    static public YaraRuleContainerConjunctive buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
+    static public YaraRulesContainer buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
     {
         int D = finalCandidates.size();
         int N = targets.size();
-        YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name);
-        if(D == 0)//Nothing to do :( 
-            return yara;
+        YaraRulesContainer yaras = new YaraRulesContainer(gram_size);
+        if(D == 0)//Nothing to do :(
+            return yaras;
 //        System.out.println("We have " +  D + " potential features");
         //Lets build a dataset object representing the files and which signatures (features) occured in each
         List<Vec> dataRep = new ArrayList<>();
@@ -662,10 +660,9 @@ public class AutoYaraCluster
         if(max_features_seen < min_features)//if we didn't mean the min, subtract an extra b/c otherwise we need the min count to hit the max rows, which is not likely
             min_features = Math.max(max_features_seen-1, 1);
         
-        for (int c = 0; c < row_clusters.size(); c++)
-        {
+        for (int c = 0; c < row_clusters.size(); c++) {
             int C_size = row_clusters.get(c).size();
-            if(C_size < min_rows)
+            if (C_size < min_rows)
                 continue;
             int[] feature_counts = feature_counts_all.get(c);
 
@@ -673,9 +670,9 @@ public class AutoYaraCluster
             Set<Integer> selected_features = new HashSet<>(col_clusters.get(c));
 
             //We are only going to consider features that occur in >= 50% of this cluster
-            selected_features.removeIf(j-> feature_counts[j] < 0.5*C_size);
+            selected_features.removeIf(j -> feature_counts[j] < 0.5 * C_size);
 
-            if(selected_features.size() < min_features)
+            if (selected_features.size() < min_features)
                 continue;
 
             conjuction_sets.add(selected_features);
@@ -684,54 +681,51 @@ public class AutoYaraCluster
             //how many files have at least X of these features?
             List<Integer> file_occurance_counts = new ArrayList<>();
             rows_covered.addAll(row_clusters.get(c));
-            for(int i : row_clusters.get(c))
-            {
+            for (int i : row_clusters.get(c)) {
                 int nnz_in_bic = 0;
-                for(IndexValue iv : dataRep.get(i))
-                    if(selected_features.contains(iv.getIndex()) && iv.getValue() > 0)
+                for (IndexValue iv : dataRep.get(i))
+                    if (selected_features.contains(iv.getIndex()) && iv.getValue() > 0)
                         nnz_in_bic++;
                 file_occurance_counts.add(nnz_in_bic);
             }
 
             Collections.sort(file_occurance_counts);
             OnLineStatistics right_portion = new OnLineStatistics();
-            for(int count : file_occurance_counts)
+            for (int count : file_occurance_counts)
                 right_portion.add(count);
 
             OnLineStatistics left_portion = new OnLineStatistics();
             double min_score = Double.POSITIVE_INFINITY;
             int indx = 0;
-            for(int i = 0; i < file_occurance_counts.size()-1; i++)
-            {
+            for (int i = 0; i < file_occurance_counts.size() - 1; i++) {
                 int count_i = file_occurance_counts.get(i);
                 left_portion.add(count_i, 1.0);
                 right_portion.remove(count_i, 1.0);
                 //same value check, keep shifting while the value stays the same
-                while(i < file_occurance_counts.size()-1 && count_i == file_occurance_counts.get(i+1))
-                {
+                while (i < file_occurance_counts.size() - 1 && count_i == file_occurance_counts.get(i + 1)) {
                     i++;
                     left_portion.add(count_i, 1.0);
                     right_portion.remove(count_i, 1.0);
                 }
 
 
-                double cur_score = left_portion.getVarance()*left_portion.getSumOfWeights()
+                double cur_score = left_portion.getVarance() * left_portion.getSumOfWeights()
                         + right_portion.getVarance() * right_portion.getSumOfWeights();
 
-                if(cur_score < min_score)
-                {
+                if (cur_score < min_score) {
                     indx = i;
                     min_score = cur_score;
                 }
             }
 
 
-            int count_min = file_occurance_counts.get(Math.min(indx+1, file_occurance_counts.size()-1));
-
-            yara.addSignature(count_min, selected_features.stream().map(i->finalCandidates.get(i)).collect(Collectors.toSet()));
+            int count_min = file_occurance_counts.get(Math.min(indx + 1, file_occurance_counts.size() - 1));
+            var sigs = selected_features.stream().map(i->finalCandidates.get(i)).collect(Collectors.toSet());
+            YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name, count_min, sigs, c);
+            yaras.addRule(yara);
 
         }
-        return yara;
+        return yaras;
     }
     
     private static void getCoClusteringH(SimpleDataSet sigDataset, List<List<Integer>> rows, List<List<Integer>> cols)
