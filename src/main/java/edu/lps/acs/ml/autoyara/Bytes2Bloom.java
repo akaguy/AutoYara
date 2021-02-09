@@ -143,7 +143,7 @@ public class Bytes2Bloom
                 }
                 catch (IOException | InterruptedException ex)
                 {
-                    Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
 
             });
@@ -162,7 +162,7 @@ public class Bytes2Bloom
                 }
                 catch (IOException ex)
                 {
-                    Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
 
             });
@@ -182,7 +182,7 @@ public class Bytes2Bloom
             }
             catch (IOException ex)
             {
-                Logger.getLogger(Bytes2Bloom.class.getName()).log(Level.SEVERE, null, ex);
+                MyLogger.getLogger().error( null, ex);
             }
 
         }

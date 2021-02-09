@@ -43,7 +43,7 @@ import java.util.stream.BaseStream;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-
+import org.slf4j.LoggerFactory;
 public class AutoYaraCluster
 {
     
@@ -180,11 +180,19 @@ public class AutoYaraCluster
                 try (Stream<String> lines = Files.lines(inFile.toPath())) {
                     inDir = lines.filter(p -> Files.exists(Paths.get(p))).map(p -> new File(p)).collect(Collectors.toList());
                 }
+                catch (Exception ex) {
+                    MyLogger.getLogger().error( null, ex);
+
+                }
             }
             var fpFile = fpEvalDirs.get(0);
             if (fpFile.isFile()) {
                 try (Stream<String> lines = Files.lines(fpFile.toPath())) {
                     fpEvalDirs = lines.filter(p -> Files.exists(Paths.get(p))).map(p -> new File(p)).collect(Collectors.toList());
+                }
+                catch (Exception ex) {
+                    MyLogger.getLogger().error( null, ex);
+
                 }
             }
         }
@@ -261,7 +269,7 @@ public class AutoYaraCluster
                     }
                     catch (IOException ex)
                     {
-                        Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                        MyLogger.getLogger().error( null, ex);
                     }
                 }
 		
@@ -329,7 +337,7 @@ public class AutoYaraCluster
             }
             catch (IOException ex)
             {
-                Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                MyLogger.getLogger().error( null, ex);
                 return new ArrayList<Path>().stream();
             }
         }).collect(Collectors.toList());
@@ -356,7 +364,7 @@ public class AutoYaraCluster
             }
             catch (IOException ex)
             {
-                Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                MyLogger.getLogger().error( null, ex);
                 return 0L;
             }
         }).sum();
@@ -379,7 +387,7 @@ public class AutoYaraCluster
                 }
                 catch (IOException | InterruptedException ex)
                 {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
             });
 
@@ -395,7 +403,7 @@ public class AutoYaraCluster
                 }
                 catch (IOException ex)
                 {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
             });
 
@@ -439,7 +447,7 @@ public class AutoYaraCluster
                 }
                 catch (IOException ex)
                 {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
             });
 
@@ -556,7 +564,7 @@ public class AutoYaraCluster
                 }
                 catch (IOException ex)
                 {
-                    Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                    MyLogger.getLogger().error( null, ex);
                 }
                 
                 yara.addComment(comment.toString());
@@ -860,7 +868,7 @@ public class AutoYaraCluster
                     }
                     catch (IOException | ClassNotFoundException ex)
                     {
-                        Logger.getLogger(AutoYaraCluster.class.getName()).log(Level.SEVERE, null, ex);
+                        MyLogger.getLogger().error( null, ex);
                     }
                 });
         return blooms;
