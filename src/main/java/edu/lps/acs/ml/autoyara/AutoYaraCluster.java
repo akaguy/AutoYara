@@ -230,7 +230,7 @@ public class AutoYaraCluster
         
         final Map<Set<Integer>, SigCandidate> multi_gram_working_set = new HashMap<>();
         
-        bloomSizes.stream().forEach(gram_size->
+        for(Integer gram_size : bloomSizes)
         {
 
             if(best_rule_coverage.get() >= 1.0 && meets_min_desired_coverage.get())
@@ -287,7 +287,7 @@ public class AutoYaraCluster
                     meets_min_desired_coverage.set(this_rule_strong);
                 }
             }
-        });
+        }
         
         if(best_rule.isEmpty())
         {

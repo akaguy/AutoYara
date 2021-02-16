@@ -114,6 +114,10 @@ public class Bytes2Bloom
             try (Stream<String> lines = Files.lines(inDir.toPath())) {
                 allFiles = lines.filter(p-> Files.exists(Paths.get(p))).map(p->new File(p)).collect(Collectors.toList());
             }
+            catch (Exception ex)
+            {
+                MyLogger.getLogger().error( null, ex);
+            }
         }
         else {
             return;
