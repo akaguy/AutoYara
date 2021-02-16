@@ -34,6 +34,7 @@ public class YaraRuleContainerConjunctive
     Integer min_count = 0;
     Integer id = 0;
     Map<String, Double> measures = new HashMap<>();
+    Map<String,List<String>> results = new HashMap<>();
 
 
     public YaraRuleContainerConjunctive(int total_count, String name,int count, Set<SigCandidate> signature,int id)

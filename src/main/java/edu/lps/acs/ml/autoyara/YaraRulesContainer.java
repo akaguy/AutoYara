@@ -8,11 +8,13 @@ import java.util.Set;
 public class YaraRulesContainer {
 
     List<YaraRuleContainerConjunctive> signature_sets = new ArrayList<>();
-    Integer ngram_size = 0;
 
-    public YaraRulesContainer(int ngram_size)
+    public YaraRulesContainer()
     {
-        this.ngram_size =ngram_size;
+    }
+
+    public YaraRulesContainer(List<YaraRuleContainerConjunctive> rules){
+        this.signature_sets = rules;
     }
 
     public void addRule(YaraRuleContainerConjunctive yara)

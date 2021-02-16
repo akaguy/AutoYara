@@ -219,7 +219,7 @@ public class AutoYaraCluster
         //, lets find some potential yara rules!
         /////////////
         
-        final Collection<YaraRulesContainer> best_rule = new ArrayList();
+        final Collection<YaraRuleContainerConjunctive> best_rule = new ArrayList();
         final AtomicDouble best_rule_coverage = new AtomicDouble(0);
         /**
          * Whether or not we meet the goal of having at least 5 terms/features 
@@ -276,16 +276,15 @@ public class AutoYaraCluster
                 int log_diff_gram_size = log2(gram_size)-log2(best_rule_gram_size.get());
                 boolean this_rule_strong = yara.minConjunctionSize() >= 5;
                 double penalty = Math.min(yara.minConjunctionSize()/5.0, 1);
-                
-                if(input_tp_rate*penalty > best_rule_coverage.get() + log_diff_gram_size/100.0)//give a slight favor to smaller rules!
-                {
-                    best_rule.clear();
-                    best_rule.add(yara);
 
-                    best_rule_coverage.set(input_tp_rate*penalty);
-                    best_rule_gram_size.set(gram_size);
-                    meets_min_desired_coverage.set(this_rule_strong);
+                for(var rule: yara.signature_sets){
+                    double fp = rule.measures.get("FP");
+                    double tp = rule.measures.get("TP");
+                    if(fp <= false_pos_b){
+                        best_rule.add(rule);
+                    }
                 }
+
             }
         }
         
@@ -297,16 +296,17 @@ public class AutoYaraCluster
         
         if(!silent)
             System.out.println("Saving rule to " + out_file.getAbsolutePath());
+        YaraRulesContainer yara = new YaraRulesContainer(new ArrayList<>(best_rule));
         try(BufferedWriter bw = new BufferedWriter(new FileWriter(out_file)))
         {
-            YaraRulesContainer yara = best_rule.stream().findFirst().get();
+
             bw.write(yara.toString());
         }
 
         if (json_path != null)
         {
             var gb = new GsonBuilder().setExclusionStrategies(new ExclStrat()).setPrettyPrinting().create();
-            String json_str = gb.toJson(all_rules);
+            String json_str = gb.toJson(yara);
             try(BufferedWriter bw = new BufferedWriter(new FileWriter(json_path)))
             {
                 bw.write(json_str);
@@ -598,6 +598,7 @@ public class AutoYaraCluster
             var rate = numer/denom;
 
             yara.measures.put(header,rate);
+            yara.results.put(header,fps.stream().map(file -> StringUtils.getBaseName(file.getName())).collect(Collectors.toList()));
             return rate;
         }
         else
@@ -608,7 +609,7 @@ public class AutoYaraCluster
     {
         int D = finalCandidates.size();
         int N = targets.size();
-        YaraRulesContainer yaras = new YaraRulesContainer(gram_size);
+        YaraRulesContainer yaras = new YaraRulesContainer();
         if(D == 0)//Nothing to do :(
             return yaras;
 //        System.out.println("We have " +  D + " potential features");
@@ -747,7 +748,7 @@ public class AutoYaraCluster
 
             int count_min = file_occurance_counts.get(Math.min(indx + 1, file_occurance_counts.size() - 1));
             var sigs = selected_features.stream().map(i->finalCandidates.get(i)).collect(Collectors.toSet());
-            YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name, count_min, sigs, c);
+            YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name, count_min, sigs, log2(gram_size)*10000+c);
             yaras.addRule(yara);
 
         }
