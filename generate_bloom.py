@@ -5,8 +5,8 @@ from etpstorage._azure.azure_storage import AzureStorage
 import uuid
 
 
-CONN_STR = os.environ['CONN_STR']
-CONTAINER = os.environ['CONTAINER']
+CONN_STR = os.environ.get('CONN_STR','')
+CONTAINER = os.environ.get('CONTAINER','')
 base_remote_path = 'models'
 
 
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     type=str, default='')
 
     args = parser.parse_args()
-    if args.conn_str == '':
+    if CONN_STR != '' and CONTAINER != '':
         azure_object = AzureStorage(CONN_STR, CONTAINER)
     else:
         azure_object = AzureStorage(args.conn_str,args.container)

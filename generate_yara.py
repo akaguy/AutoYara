@@ -7,8 +7,8 @@ import uuid
 
 base_remote_path = 'models'
 autoyara_jar = 'target/AutoYara-1.0-SNAPSHOT.jar'
-CONN_STR = os.environ['CONN_STR']
-CONTAINER = os.environ['CONTAINER']
+CONN_STR = os.environ.get('CONN_STR','')
+CONTAINER = os.environ.get('CONTAINER','')
 
 
 
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     parser.add_argument("-fp", "--fp-rate", help="Max FP rate",
     type=float, required=True)
     args = parser.parse_args()
-    if args.conn_str == '':
+    if CONN_STR != '' and CONTAINER != '':
         azure_object = AzureStorage(CONN_STR, CONTAINER)
     else:
         azure_object = AzureStorage(args.conn_str,args.container)
