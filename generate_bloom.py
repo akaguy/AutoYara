@@ -29,7 +29,7 @@ def main(id_str,benign_file,fp_rate,azure_object):
     bloom_folder = os.path.join(new_folder,'bloom')
     remote_file = os.path.join(new_folder,os.path.basename(benign_file))
     run_command(f"mkdir {bloom_folder}")
-    run_command(f'./run_bloom.sh {remote_file} {bloom_folder} {fp_rate}'))
+    run_command(f'./run_bloom.sh {remote_file} {bloom_folder} {fp_rate}')
 
 
 
