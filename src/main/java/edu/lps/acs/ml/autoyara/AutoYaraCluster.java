@@ -240,12 +240,14 @@ public class AutoYaraCluster
                                        max_filter_size, toKeep, silent, Math.max(false_pos_b, false_pos_m));
             
             Set<Integer> alreadyFrailedOn = new HashSet<>();
+            int index = 0;
             for(SpectralCoClustering.InputNormalization norm : SpectralCoClustering.InputNormalization.values())
             {
+                index++;
                 Set<Integer> rows_covered = new HashSet<>();
                 
                 YaraRulesContainer yara= buildRule(finalCandidates, targets, rows_covered, name, norm,
-                                                            gram_size, alreadyFrailedOn);
+                                                            gram_size, alreadyFrailedOn,index);
                 //DOTO: fix if needed
                 double fp_rate = fpEvalDirs.isEmpty() ? 0 : yara.signature_sets.stream().mapToDouble(rule->addMatchEval("FP", fpEvalDirs, rule)).max().orElse(-1);
 //                double tp_rate = fpEvalDirs.isEmpty() ? 0 : yara.signature_sets.stream().mapToDouble(rule->addMatchEval("True Positives", tpEvalDirs, rule)).max().orElse(-1);
@@ -605,7 +607,7 @@ public class AutoYaraCluster
             return 1.0;
     }
 
-    static public YaraRulesContainer buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn)
+    static public YaraRulesContainer buildRule(List<SigCandidate> finalCandidates, List<Path> targets, Set<Integer> rows_covered, final String name, SpectralCoClustering.InputNormalization normalization, int gram_size, Set<Integer> alreadyFailedOn,int index)
     {
         int D = finalCandidates.size();
         int N = targets.size();
@@ -748,7 +750,7 @@ public class AutoYaraCluster
 
             int count_min = file_occurance_counts.get(Math.min(indx + 1, file_occurance_counts.size() - 1));
             var sigs = selected_features.stream().map(i->finalCandidates.get(i)).collect(Collectors.toSet());
-            YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name, count_min, sigs, log2(gram_size)*10000+c);
+            YaraRuleContainerConjunctive yara = new YaraRuleContainerConjunctive(N, name, count_min, sigs, (log2(gram_size)*10000+c)*10+index);
             yaras.addRule(yara);
 
         }
